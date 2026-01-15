@@ -1,0 +1,91 @@
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+#define LED_PIN 2
+
+BLECharacteristic *ledCharacteristic;
+bool deviceConnected = false;
+
+#define SERVICE_UUID        "12345678-1234-1234-1234-123456789012"
+#define CHARACTERISTIC_UUID "87654321-4321-4321-4321-210987654321"
+
+// Server callbacks to track connection state
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+      Serial.println("Device connected");
+    }
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+      Serial.println("Device disconnected");
+      // Restart advertising to allow reconnection
+      pServer->startAdvertising();
+      Serial.println("Advertising restarted");
+    }
+};
+
+// Characteristic callbacks
+class MyCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      String value = pCharacteristic->getValue();  // Get as Arduino String
+      
+      if (value.length() > 0) {
+        Serial.print("Received: ");
+        Serial.println(value);
+        
+        if (value == "1") {
+          digitalWrite(LED_PIN, HIGH);
+          Serial.println("LED ON");
+        } else if (value == "0") {
+          digitalWrite(LED_PIN, LOW);
+          Serial.println("LED OFF");
+        } else {
+          Serial.print("Unknown command: ");
+          Serial.println(value);
+        }
+      }
+    }
+};
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Ensure LED starts OFF
+
+  // Initialize BLE
+  BLEDevice::init("ESP32_LED");
+  BLEServer *pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  
+  // Create service
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+  
+  // Create characteristic
+  ledCharacteristic = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID,
+                      BLECharacteristic::PROPERTY_WRITE
+                    );
+  
+  ledCharacteristic->setCallbacks(new MyCallbacks());
+  
+  // Start service
+  pService->start();
+  
+  // Start advertising
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // Functions that help with iPhone connections
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+  
+  Serial.println("BLE LED Server Ready - Waiting for connection...");
+}
+
+void loop() {
+  // Nothing needed here
+  delay(1000);
+}
